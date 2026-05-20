@@ -1,0 +1,9 @@
+services:
+  livekit-ui:
+    build: .
+    container_name: livekit-ui
+    restart: always
+    env_file:
+      - .env.local
+    ports:
+      - "127.0.0.1:3000:3000"
