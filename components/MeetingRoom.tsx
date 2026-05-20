@@ -19,9 +19,7 @@ interface MeetingRoomProps {
   token: string
 }
 
-// Above this headcount, switch to speaker-focus layout:
-// only the active speaker shows large video, others show audio-only tiles.
-// Participants can still turn their own video on/off freely via the control bar.
+// Above this headcount, switch to speaker-focus layout.
 const LARGE_MEETING_THRESHOLD = 30
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? ''
@@ -44,7 +42,7 @@ function AdaptiveConference() {
             <ParticipantTile />
           </CarouselLayout>
           {allVideoTracks.length > 0 && (
-            <FocusLayout track={allVideoTracks[0]} />
+            <FocusLayout trackRef={allVideoTracks[0]} />
           )}
         </FocusLayoutContainer>
         <ControlBar />
@@ -53,7 +51,7 @@ function AdaptiveConference() {
     )
   }
 
-  // Standard grid layout for normal-sized meetings
+  // Standard grid layout — VideoConference includes its own RoomAudioRenderer
   return <VideoConference />
 }
 
@@ -67,10 +65,9 @@ export default function MeetingRoom({ token }: MeetingRoomProps) {
       audio={true}
       data-lk-theme="default"
       style={{ height: '100vh' }}
-      adaptiveStream={true}
+      options={{ adaptiveStream: true }}
     >
       <AdaptiveConference />
-      <RoomAudioRenderer />
     </LiveKitRoom>
   )
 }
