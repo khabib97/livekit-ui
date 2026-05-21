@@ -1,18 +1,32 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import MeetingRoom from '@/components/MeetingRoom'
+
+// Extract the leading subdomain from the current hostname.
+// "acme.gomeeting.video" → "acme"
+// "gomeeting.video"      → ""  (no subdomain — direct domain access)
+function getSubdomain(): string {
+  if (typeof window === 'undefined') return ''
+  const parts = window.location.hostname.split('.')
+  return parts.length >= 3 ? parts[0] : ''
+}
 
 function RoomContent({ roomKey }: { roomKey: string }) {
   const params = useSearchParams()
   const initialToken = params.get('token')
-  const subdomain = params.get('sub') ?? ''
 
   const [token, setToken] = useState<string | null>(initialToken)
   const [name, setName] = useState('')
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True when a management access token is present in localStorage (logged-in user).
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem('access_token'))
+  }, [])
 
   if (token) {
     return <MeetingRoom token={token} />
@@ -20,14 +34,30 @@ function RoomContent({ roomKey }: { roomKey: string }) {
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    const subdomain = getSubdomain()
+    const accessToken = localStorage.getItem('access_token')
+
+    if (!accessToken && !name.trim()) {
+      setError('Please enter your name.')
+      return
+    }
+
     setJoining(true)
     setError(null)
+
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`
+      }
+
+      const body: Record<string, string> = { subdomain, room_key: roomKey }
+      if (!accessToken) body['name'] = name.trim()
+
       const res = await fetch('/api/v1/meeting/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subdomain, room_key: roomKey, name: name.trim() }),
+        headers,
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail ?? `Error ${res.status}`)
@@ -51,31 +81,40 @@ function RoomContent({ roomKey }: { roomKey: string }) {
         <h2 style={{ color: '#fff', margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
           Join Meeting
         </h2>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          disabled={joining}
-          required
-          autoFocus
-          style={{
-            padding: '0.75rem 1rem', borderRadius: '8px',
-            border: '1px solid #333', background: '#2a2a2a',
-            color: '#fff', fontSize: '1rem', outline: 'none',
-          }}
-        />
+
+        {isLoggedIn ? (
+          <p style={{ color: '#9ca3af', margin: 0, fontSize: '0.875rem' }}>
+            You&apos;re joining as a registered user.
+          </p>
+        ) : (
+          <input
+            type="text"
+            placeholder="Your name"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            disabled={joining}
+            required
+            autoFocus
+            style={{
+              padding: '0.75rem 1rem', borderRadius: '8px',
+              border: '1px solid #333', background: '#2a2a2a',
+              color: '#fff', fontSize: '1rem', outline: 'none',
+            }}
+          />
+        )}
+
         {error && (
           <p style={{ color: '#f87171', margin: 0, fontSize: '0.875rem' }}>{error}</p>
         )}
+
         <button
           type="submit"
-          disabled={joining || !name.trim()}
+          disabled={joining || (!isLoggedIn && !name.trim())}
           style={{
             padding: '0.75rem', borderRadius: '8px', border: 'none',
-            background: joining || !name.trim() ? '#374151' : '#2563eb',
+            background: joining || (!isLoggedIn && !name.trim()) ? '#374151' : '#2563eb',
             color: '#fff', fontSize: '1rem',
-            cursor: joining || !name.trim() ? 'not-allowed' : 'pointer',
+            cursor: joining || (!isLoggedIn && !name.trim()) ? 'not-allowed' : 'pointer',
             transition: 'background 0.15s',
           }}
         >
