@@ -4,9 +4,6 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense, useState, useEffect } from 'react'
 import MeetingRoom from '@/components/MeetingRoom'
 
-// Extract the leading subdomain from the current hostname.
-// "acme.gomeeting.video" → "acme"
-// "gomeeting.video"      → ""  (no subdomain — direct domain access)
 function getSubdomain(): string {
   if (typeof window === 'undefined') return ''
   const parts = window.location.hostname.split('.')
@@ -19,9 +16,9 @@ function RoomContent({ roomKey }: { roomKey: string }) {
 
   const [token, setToken] = useState<string | null>(initialToken)
   const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // True when a management access token is present in localStorage (logged-in user).
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
@@ -29,7 +26,7 @@ function RoomContent({ roomKey }: { roomKey: string }) {
   }, [])
 
   if (token) {
-    return <MeetingRoom token={token} />
+    return <MeetingRoom token={token} roomKey={roomKey} />
   }
 
   async function handleJoin(e: React.FormEvent) {
@@ -47,12 +44,11 @@ function RoomContent({ roomKey }: { roomKey: string }) {
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`
-      }
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
 
       const body: Record<string, string> = { subdomain, room_key: roomKey }
       if (!accessToken) body['name'] = name.trim()
+      if (password.trim()) body['join_password'] = password.trim()
 
       const res = await fetch('/api/v1/meeting/join', {
         method: 'POST',
@@ -68,6 +64,8 @@ function RoomContent({ roomKey }: { roomKey: string }) {
       setJoining(false)
     }
   }
+
+  const canSubmit = !joining && (isLoggedIn || !!name.trim())
 
   return (
     <div style={{
@@ -95,13 +93,18 @@ function RoomContent({ roomKey }: { roomKey: string }) {
             disabled={joining}
             required
             autoFocus
-            style={{
-              padding: '0.75rem 1rem', borderRadius: '8px',
-              border: '1px solid #333', background: '#2a2a2a',
-              color: '#fff', fontSize: '1rem', outline: 'none',
-            }}
+            style={inputStyle}
           />
         )}
+
+        <input
+          type="password"
+          placeholder="Meeting password (if required)"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          disabled={joining}
+          style={inputStyle}
+        />
 
         {error && (
           <p style={{ color: '#f87171', margin: 0, fontSize: '0.875rem' }}>{error}</p>
@@ -109,12 +112,12 @@ function RoomContent({ roomKey }: { roomKey: string }) {
 
         <button
           type="submit"
-          disabled={joining || (!isLoggedIn && !name.trim())}
+          disabled={!canSubmit}
           style={{
             padding: '0.75rem', borderRadius: '8px', border: 'none',
-            background: joining || (!isLoggedIn && !name.trim()) ? '#374151' : '#2563eb',
+            background: canSubmit ? '#2563eb' : '#374151',
             color: '#fff', fontSize: '1rem',
-            cursor: joining || (!isLoggedIn && !name.trim()) ? 'not-allowed' : 'pointer',
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
             transition: 'background 0.15s',
           }}
         >
@@ -123,6 +126,12 @@ function RoomContent({ roomKey }: { roomKey: string }) {
       </form>
     </div>
   )
+}
+
+const inputStyle: React.CSSProperties = {
+  padding: '0.75rem 1rem', borderRadius: '8px',
+  border: '1px solid #333', background: '#2a2a2a',
+  color: '#fff', fontSize: '1rem', outline: 'none',
 }
 
 export default function RoomPage({ params }: { params: { roomKey: string } }) {
