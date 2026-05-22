@@ -366,6 +366,11 @@ const controlBtn: React.CSSProperties = {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export default function MeetingRoom({ token, roomKey }: MeetingRoomProps) {
+  function handleDisconnected() {
+    // Small delay so the user sees the room disappear before redirect
+    setTimeout(() => { window.location.href = '/dashboard' }, 1500)
+  }
+
   return (
     <LiveKitRoom
       serverUrl={LIVEKIT_URL}
@@ -375,6 +380,7 @@ export default function MeetingRoom({ token, roomKey }: MeetingRoomProps) {
       audio={true}
       data-lk-theme="default"
       options={{ adaptiveStream: true }}
+      onDisconnected={handleDisconnected}
     >
       <MeetingLayout roomKey={roomKey} livekitToken={token} />
     </LiveKitRoom>
