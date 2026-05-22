@@ -226,36 +226,77 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── New meeting tabs ── */}
+        {/* ── New meeting ── */}
         <div style={section}>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
             <button onClick={() => setTab('instant')} style={tabBtn(tab === 'instant')}>Start now</button>
             <button onClick={() => setTab('schedule')} style={tabBtn(tab === 'schedule')}>Schedule</button>
           </div>
 
           {tab === 'instant' && (
-            <form onSubmit={createMeeting} style={formRow}>
-              <input placeholder="Meeting name" value={roomName} onChange={e => setRoomName(e.target.value)} style={input} />
-              <input type="password" placeholder="Password (optional)" value={password} onChange={e => setPassword(e.target.value)} style={{ ...input, maxWidth: 200 }} />
+            <form onSubmit={createMeeting} style={formCard}>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Meeting name</label>
+                <input
+                  placeholder="e.g. Weekly team sync"
+                  value={roomName}
+                  onChange={e => setRoomName(e.target.value)}
+                  style={input}
+                />
+              </div>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Join password <span style={optionalTag}>(optional)</span></label>
+                <input
+                  type="password"
+                  placeholder="Leave blank for an open meeting"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={input}
+                />
+              </div>
+              {createError && <p style={errStyle}>{createError}</p>}
               <button type="submit" disabled={creating} style={primaryBtn}>
                 {creating ? 'Starting…' : 'Start meeting'}
               </button>
-              {createError && <p style={errStyle}>{createError}</p>}
             </form>
           )}
 
           {tab === 'schedule' && (
-            <form onSubmit={scheduleMeeting} style={{ ...formRow, flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', width: '100%' }}>
-                <input placeholder="Meeting name" value={schedName} onChange={e => setSchedName(e.target.value)} style={{ ...input, flex: 1 }} />
-                <input type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} required style={{ ...input, minWidth: 220 }} />
-                <input type="password" placeholder="Password (optional)" value={schedPassword} onChange={e => setSchedPassword(e.target.value)} style={{ ...input, maxWidth: 180 }} />
+            <form onSubmit={scheduleMeeting} style={formCard}>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Meeting name</label>
+                <input
+                  placeholder="e.g. Product review"
+                  value={schedName}
+                  onChange={e => setSchedName(e.target.value)}
+                  style={input}
+                />
               </div>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Date &amp; time</label>
+                <input
+                  type="datetime-local"
+                  value={schedAt}
+                  onChange={e => setSchedAt(e.target.value)}
+                  required
+                  style={input}
+                />
+              </div>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Join password <span style={optionalTag}>(optional)</span></label>
+                <input
+                  type="password"
+                  placeholder="Leave blank for an open meeting"
+                  value={schedPassword}
+                  onChange={e => setSchedPassword(e.target.value)}
+                  style={input}
+                />
+              </div>
+              {schedError && <p style={errStyle}>{schedError}</p>}
+              {schedMsg && <p style={{ color: '#4ade80', fontSize: '0.875rem', margin: 0 }}>{schedMsg}</p>}
               <button type="submit" disabled={scheduling} style={primaryBtn}>
                 {scheduling ? 'Scheduling…' : 'Schedule meeting'}
               </button>
-              {schedError && <p style={errStyle}>{schedError}</p>}
-              {schedMsg && <p style={{ color: '#4ade80', fontSize: '0.875rem', margin: 0 }}>{schedMsg}</p>}
             </form>
           )}
         </div>
@@ -345,6 +386,14 @@ const main: React.CSSProperties = { flex: 1, padding: '2rem', overflowY: 'auto' 
 const section: React.CSSProperties = { marginBottom: '2rem' }
 const sectionHeading: React.CSSProperties = { color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 0.75rem' }
 const formRow: React.CSSProperties = { display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }
+const formCard: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', gap: '1rem',
+  background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem',
+  maxWidth: 520,
+}
+const fieldGroup: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.35rem' }
+const fieldLabel: React.CSSProperties = { color: '#9ca3af', fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.03em' }
+const optionalTag: React.CSSProperties = { color: '#4b5563', fontWeight: 400, fontSize: '0.75rem' }
 const input: React.CSSProperties = {
   padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid #333',
   background: '#1e1e1e', color: '#fff', fontSize: '0.95rem', outline: 'none', flex: 1, minWidth: 180,

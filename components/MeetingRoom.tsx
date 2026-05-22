@@ -17,6 +17,7 @@ import {
 import { Track, RoomEvent, Participant } from 'livekit-client'
 import '@livekit/components-styles'
 import { useState, useEffect, useCallback } from 'react'
+import { useBranding } from '@/lib/branding'
 
 interface MeetingRoomProps {
   token: string
@@ -240,6 +241,7 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
   const room = useRoomContext()
   const { localParticipant } = useLocalParticipant()
   const participants = useParticipants()
+  const branding = useBranding()
 
   const tracks = useTracks(
     [
@@ -286,6 +288,21 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#111' }}>
+      {/* Branding header */}
+      {branding && (branding.logo_url || branding.name) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.6rem',
+          height: 40, padding: '0 1rem', flexShrink: 0,
+          background: '#161616', borderBottom: '1px solid #262626',
+        }}>
+          {branding.logo_url ? (
+            <img src={branding.logo_url} alt={branding.name} style={{ maxHeight: 24, maxWidth: 120, objectFit: 'contain', borderRadius: 3 }} />
+          ) : (
+            <span style={{ color: '#d1d5db', fontWeight: 600, fontSize: '0.875rem' }}>{branding.name}</span>
+          )}
+        </div>
+      )}
+
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Video grid */}
         <div style={{ flex: 1, overflow: 'hidden' }}>

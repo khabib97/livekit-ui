@@ -83,6 +83,10 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p style={footer}>
+          <a href="/forgot-password" style={link}>Forgot password?</a>
+        </p>
+
         {!branding && (
           <p style={footer}>
             Want to create a workspace?{' '}
