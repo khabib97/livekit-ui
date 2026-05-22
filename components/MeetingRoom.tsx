@@ -97,6 +97,24 @@ const RecordIcon = ({ active }: { active: boolean }) => active ? (
   </svg>
 )
 
+const TvIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z" />
+  </svg>
+)
+
+const PlayIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z" />
+  </svg>
+)
+
+const PauseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+  </svg>
+)
+
 // ── Local recording ───────────────────────────────────────────────────────────
 
 function useLocalRecording(participants: ReturnType<typeof useParticipants>) {
@@ -213,6 +231,126 @@ function useLocalRecording(participants: ReturnType<typeof useParticipants>) {
   }
 
   return { recording, startRecording, stopRecording }
+}
+
+// ── Co-watch ──────────────────────────────────────────────────────────────────
+
+type CowMsg =
+  | { type: 'cow_share'; url: string }
+  | { type: 'cow_play'; ts: number }
+  | { type: 'cow_pause'; ts: number }
+  | { type: 'cow_seek'; ts: number }
+  | { type: 'cow_stop' }
+  | { type: 'cow_state'; url: string; ts: number; playing: boolean }
+
+function detectPlatform(url: string): 'youtube' | 'vimeo' | 'direct' {
+  if (/youtu(be\.com|\.be)/i.test(url)) return 'youtube'
+  if (/vimeo\.com/i.test(url)) return 'vimeo'
+  return 'direct'
+}
+
+function getYouTubeId(url: string): string | null {
+  const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  return m ? m[1] : null
+}
+
+function getVimeoId(url: string): string | null {
+  const m = url.match(/vimeo\.com\/(\d+)/)
+  return m ? m[1] : null
+}
+
+function useCoWatch(
+  room: ReturnType<typeof useRoomContext>,
+  localParticipant: ReturnType<typeof useLocalParticipant>['localParticipant'],
+  isModerator: boolean,
+) {
+  const [cowUrl, setCowUrl] = useState<string | null>(null)
+  const [cowCmd, setCowCmd] = useState<{ msg: CowMsg; key: number } | null>(null)
+  const keyRef = useRef(0)
+  const startedAtRef = useRef<number | null>(null)
+  const pausedAtRef = useRef<number>(0)
+  const cowUrlRef = useRef<string | null>(null)
+  cowUrlRef.current = cowUrl
+  const lpRef = useRef(localParticipant)
+  lpRef.current = localParticipant
+
+  async function pub(msg: CowMsg) {
+    await lpRef.current.publishData(
+      new TextEncoder().encode(JSON.stringify(msg)), { reliable: true }
+    )
+  }
+
+  useEffect(() => {
+    const dec = new TextDecoder()
+    const handler = (payload: Uint8Array) => {
+      try {
+        const msg = JSON.parse(dec.decode(payload)) as CowMsg
+        if (msg.type === 'cow_share') {
+          setCowUrl(msg.url); startedAtRef.current = null; pausedAtRef.current = 0
+        } else if (msg.type === 'cow_stop') {
+          setCowUrl(null); startedAtRef.current = null
+        } else if (msg.type === 'cow_play') {
+          startedAtRef.current = Date.now() - msg.ts * 1000
+          setCowCmd({ msg, key: ++keyRef.current })
+        } else if (msg.type === 'cow_pause') {
+          startedAtRef.current = null; pausedAtRef.current = msg.ts
+          setCowCmd({ msg, key: ++keyRef.current })
+        } else if (msg.type === 'cow_seek') {
+          if (startedAtRef.current !== null) startedAtRef.current = Date.now() - msg.ts * 1000
+          else pausedAtRef.current = msg.ts
+          setCowCmd({ msg, key: ++keyRef.current })
+        } else if (msg.type === 'cow_state') {
+          setCowUrl(msg.url)
+          if (msg.playing) startedAtRef.current = Date.now() - msg.ts * 1000
+          else { startedAtRef.current = null; pausedAtRef.current = msg.ts }
+          setCowCmd({ msg, key: ++keyRef.current })
+        }
+      } catch { /* ignore */ }
+    }
+    room.on(RoomEvent.DataReceived, handler)
+    return () => { room.off(RoomEvent.DataReceived, handler) }
+  }, [room])
+
+  useEffect(() => {
+    if (!isModerator) return
+    const handler = () => {
+      if (!cowUrlRef.current) return
+      const ts = startedAtRef.current !== null
+        ? (Date.now() - startedAtRef.current) / 1000
+        : pausedAtRef.current
+      pub({ type: 'cow_state', url: cowUrlRef.current, ts, playing: startedAtRef.current !== null })
+    }
+    room.on(RoomEvent.ParticipantConnected, handler)
+    return () => { room.off(RoomEvent.ParticipantConnected, handler) }
+  }, [room, isModerator])
+
+  function getCurrentTs() {
+    return startedAtRef.current !== null
+      ? (Date.now() - startedAtRef.current) / 1000
+      : pausedAtRef.current
+  }
+
+  async function share(url: string) {
+    setCowUrl(url); startedAtRef.current = null; pausedAtRef.current = 0
+    await pub({ type: 'cow_share', url })
+  }
+
+  async function stopCow() {
+    setCowUrl(null); startedAtRef.current = null
+    await pub({ type: 'cow_stop' })
+  }
+
+  async function cowPlay(ts: number) {
+    startedAtRef.current = Date.now() - ts * 1000
+    await pub({ type: 'cow_play', ts })
+  }
+
+  async function cowPause(ts: number) {
+    startedAtRef.current = null; pausedAtRef.current = ts
+    await pub({ type: 'cow_pause', ts })
+  }
+
+  return { cowUrl, cowCmd, share, stop: stopCow, play: cowPlay, pause: cowPause, getCurrentTs }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -356,6 +494,154 @@ function ParticipantPanel({
   )
 }
 
+// ── Co-watch panel ────────────────────────────────────────────────────────────
+
+function CoWatchPanel({
+  url,
+  cowCmd,
+  isModerator,
+  onPlay,
+  onPause,
+  onStop,
+  getCurrentTs,
+}: {
+  url: string
+  cowCmd: { msg: CowMsg; key: number } | null
+  isModerator: boolean
+  onPlay: (ts: number) => void
+  onPause: (ts: number) => void
+  onStop: () => void
+  getCurrentTs: () => number
+}) {
+  const platform = detectPlatform(url)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [playing, setPlaying] = useState(false)
+
+  function postYT(func: string, args: unknown[]) {
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: 'command', func, args: JSON.stringify(args) }), '*'
+    )
+  }
+
+  function postVimeo(method: string, value?: unknown) {
+    const msg: Record<string, unknown> = { method }
+    if (value !== undefined) msg.value = value
+    iframeRef.current?.contentWindow?.postMessage(JSON.stringify(msg), '*')
+  }
+
+  function applyPlay(ts: number) {
+    setPlaying(true)
+    if (platform === 'youtube') { postYT('seekTo', [ts, true]); postYT('playVideo', []) }
+    else if (platform === 'vimeo') { postVimeo('setCurrentTime', ts); postVimeo('play') }
+    else if (videoRef.current) { videoRef.current.currentTime = ts; videoRef.current.play() }
+  }
+
+  function applyPause() {
+    setPlaying(false)
+    if (platform === 'youtube') postYT('pauseVideo', [])
+    else if (platform === 'vimeo') postVimeo('pause')
+    else videoRef.current?.pause()
+  }
+
+  function applySeek(ts: number) {
+    if (platform === 'youtube') postYT('seekTo', [ts, true])
+    else if (platform === 'vimeo') postVimeo('setCurrentTime', ts)
+    else if (videoRef.current) videoRef.current.currentTime = ts
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!cowCmd) return
+    const { msg } = cowCmd
+    if (msg.type === 'cow_play') applyPlay(msg.ts)
+    else if (msg.type === 'cow_pause') applyPause()
+    else if (msg.type === 'cow_seek') applySeek(msg.ts)
+    else if (msg.type === 'cow_state') {
+      applySeek(msg.ts)
+      if (msg.playing) applyPlay(msg.ts); else applyPause()
+    }
+  }, [cowCmd?.key])  // key increments on each new command
+
+  function handlePlayPause() {
+    const ts = getCurrentTs()
+    if (playing) { applyPause(); onPause(ts) }
+    else { applyPlay(ts); onPlay(ts) }
+  }
+
+  let player: React.ReactNode
+  if (platform === 'youtube') {
+    const vid = getYouTubeId(url)
+    const src = vid
+      ? `https://www.youtube.com/embed/${vid}?enablejsapi=1&autoplay=0&controls=0&rel=0`
+      : url
+    player = (
+      <iframe
+        ref={iframeRef}
+        src={src}
+        style={{ width: '100%', height: '100%', border: 'none' }}
+        allow="autoplay; fullscreen; encrypted-media"
+        allowFullScreen
+      />
+    )
+  } else if (platform === 'vimeo') {
+    const vid = getVimeoId(url)
+    const src = vid
+      ? `https://player.vimeo.com/video/${vid}?api=1&autoplay=0&byline=0&title=0`
+      : url
+    player = (
+      <iframe
+        ref={iframeRef}
+        src={src}
+        style={{ width: '100%', height: '100%', border: 'none' }}
+        allow="autoplay; fullscreen"
+        allowFullScreen
+      />
+    )
+  } else {
+    player = (
+      <video
+        ref={videoRef}
+        src={url}
+        style={{ width: '100%', height: '100%', background: '#000' }}
+      />
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#000', overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden' }}>{player}</div>
+      {isModerator && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          padding: '0.4rem 1rem', background: '#161616', borderTop: '1px solid #262626', flexShrink: 0,
+        }}>
+          <span style={{
+            color: '#6b7280', fontSize: '0.72rem', fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>
+            Co-watch
+          </span>
+          <button
+            onClick={handlePlayPause}
+            title={playing ? 'Pause for everyone' : 'Play for everyone'}
+            style={controlBtn}
+          >
+            {playing ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button
+            onClick={onStop}
+            title="Stop co-watching"
+            style={{ ...controlBtn, color: '#f87171', borderColor: '#7f1d1d', marginLeft: 'auto' }}
+          >
+            Stop sharing
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const iconBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   background: '#1f2937', border: '1px solid #374151', borderRadius: '4px',
@@ -381,8 +667,11 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
 
   const amModerator = parseMeta(localParticipant).moderator
   const { recording, startRecording, stopRecording } = useLocalRecording(participants)
+  const { cowUrl, cowCmd, share: shareCow, stop: stopCow, play: cowPlay, pause: cowPause, getCurrentTs } = useCoWatch(room, localParticipant, amModerator)
 
   const [showPanel, setShowPanel] = useState(true)
+  const [showCowInput, setShowCowInput] = useState(false)
+  const [cowInput, setCowInput] = useState('')
   const [handRaised, setHandRaised] = useState(false)
   const [handRaises, setHandRaises] = useState<HandRaises>({})
 
@@ -418,7 +707,7 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
   }, [handRaised, localParticipant])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#111' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#111', position: 'relative' }}>
       {/* Branding header */}
       {branding && (branding.logo_url || branding.name) && (
         <div style={{
@@ -448,21 +737,33 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
       <style>{`@keyframes recblink { 0%,100%{opacity:1} 50%{opacity:0.2} }`}</style>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Video grid */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          {isLarge ? (
-            <FocusLayoutContainer style={{ height: '100%' }}>
-              <CarouselLayout tracks={tracks} style={{ height: '100px' }}>
+        {/* Video grid or co-watch panel */}
+        {cowUrl ? (
+          <CoWatchPanel
+            url={cowUrl}
+            cowCmd={cowCmd}
+            isModerator={amModerator}
+            onPlay={cowPlay}
+            onPause={cowPause}
+            onStop={stopCow}
+            getCurrentTs={getCurrentTs}
+          />
+        ) : (
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            {isLarge ? (
+              <FocusLayoutContainer style={{ height: '100%' }}>
+                <CarouselLayout tracks={tracks} style={{ height: '100px' }}>
+                  <ParticipantTile />
+                </CarouselLayout>
+                {tracks.length > 0 && <FocusLayout trackRef={tracks[0]} />}
+              </FocusLayoutContainer>
+            ) : (
+              <GridLayout tracks={tracks} style={{ height: '100%' }}>
                 <ParticipantTile />
-              </CarouselLayout>
-              {tracks.length > 0 && <FocusLayout trackRef={tracks[0]} />}
-            </FocusLayoutContainer>
-          ) : (
-            <GridLayout tracks={tracks} style={{ height: '100%' }}>
-              <ParticipantTile />
-            </GridLayout>
-          )}
-        </div>
+              </GridLayout>
+            )}
+          </div>
+        )}
 
         {/* Participant panel */}
         {showPanel && (
@@ -510,6 +811,22 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
             }}
           >
             <RecordIcon active={recording} />
+          </button>
+        )}
+
+        {/* Co-watch (moderator only) */}
+        {amModerator && (
+          <button
+            onClick={() => cowUrl ? stopCow() : setShowCowInput(true)}
+            title={cowUrl ? 'Stop co-watching' : 'Share a video with everyone'}
+            style={{
+              ...controlBtn,
+              background: cowUrl ? '#1e2d40' : '#1c1c1e',
+              borderColor: cowUrl ? '#1d4ed8' : '#374151',
+              color: cowUrl ? '#60a5fa' : '#9ca3af',
+            }}
+          >
+            <TvIcon />
           </button>
         )}
 
