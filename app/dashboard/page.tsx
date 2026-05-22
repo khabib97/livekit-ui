@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { apiFetch, getCurrentUser, logout, UserContext } from '@/lib/api'
+import { apiFetch, getCurrentUser, UserContext } from '@/lib/api'
+import { useBranding } from '@/lib/branding'
+import TenantSidebar from '@/components/TenantSidebar'
 
 interface Meeting {
   id: number
@@ -33,6 +35,7 @@ interface Stats {
 }
 
 export default function DashboardPage() {
+  const branding = useBranding()
   const [user, setUser] = useState<UserContext | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
@@ -163,19 +166,18 @@ export default function DashboardPage() {
 
   return (
     <div style={layout}>
-      <aside style={sidebar}>
-        <div style={logo}>Meeting</div>
-        <nav style={nav}>
-          <a href="/dashboard" style={navLink(true)}>Meetings</a>
-          {user.role === 'owner' && <a href="/dashboard/settings" style={navLink(false)}>Settings</a>}
-          {user.role === 'owner' && <a href="/dashboard/members" style={navLink(false)}>Members</a>}
-          {user.is_superadmin && <a href="/admin/tenants" style={navLink(false)}>Admin</a>}
-        </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <p style={userInfo}>{user.name}</p>
-          <button onClick={logout} style={logoutBtn}>Sign out</button>
-        </div>
-      </aside>
+      <TenantSidebar
+        branding={branding}
+        userName={user.name}
+        navItems={[
+          { href: '/dashboard', label: 'Meetings', active: true },
+          ...(user.role === 'owner' ? [
+            { href: '/dashboard/settings', label: 'Settings', active: false },
+            { href: '/dashboard/members', label: 'Members', active: false },
+          ] : []),
+          ...(user.is_superadmin ? [{ href: '/admin/tenants', label: 'Admin', active: false }] : []),
+        ]}
+      />
 
       <main style={main}>
 
@@ -339,24 +341,6 @@ export default function DashboardPage() {
 }
 
 const layout: React.CSSProperties = { display: 'flex', minHeight: '100vh', background: '#111' }
-const sidebar: React.CSSProperties = {
-  width: 220, background: '#161616', borderRight: '1px solid #222',
-  display: 'flex', flexDirection: 'column', padding: '1.5rem 1rem', flexShrink: 0,
-}
-const logo: React.CSSProperties = { color: '#fff', fontWeight: 700, fontSize: '1.1rem', marginBottom: '2rem' }
-const nav: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.25rem' }
-const navLink = (active: boolean): React.CSSProperties => ({
-  padding: '0.5rem 0.75rem', borderRadius: '6px', textDecoration: 'none',
-  color: active ? '#fff' : '#9ca3af', background: active ? '#1e293b' : 'transparent', fontSize: '0.9rem',
-})
-const userInfo: React.CSSProperties = {
-  color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.5rem',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-}
-const logoutBtn: React.CSSProperties = {
-  width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #333',
-  background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: '0.85rem',
-}
 const main: React.CSSProperties = { flex: 1, padding: '2rem', overflowY: 'auto' }
 const section: React.CSSProperties = { marginBottom: '2rem' }
 const sectionHeading: React.CSSProperties = { color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 0.75rem' }

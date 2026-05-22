@@ -2,37 +2,18 @@
 
 import { useState, useEffect } from 'react'
 import { getCurrentUser } from '@/lib/api'
-
-function getTenantSubdomain(): string | null {
-  if (typeof document === 'undefined') return null
-  const match = document.cookie.match(/(?:^|;\s*)_tenant=([^;]+)/)
-  return match ? match[1] : null
-}
-
-interface Branding {
-  name: string
-  logo_url: string | null
-  primary_color: string
-}
+import { useBranding } from '@/lib/branding'
 
 export default function LoginPage() {
+  const branding = useBranding()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [branding, setBranding] = useState<Branding | null>(null)
 
   useEffect(() => {
     const user = getCurrentUser()
-    if (user) { window.location.href = '/dashboard'; return }
-
-    const subdomain = getTenantSubdomain()
-    if (subdomain) {
-      fetch(`/api/v1/branding/${subdomain}`)
-        .then(r => r.json())
-        .then(d => { if (d.name) setBranding(d) })
-        .catch(() => {})
-    }
+    if (user) { window.location.href = '/dashboard' }
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -50,9 +31,7 @@ export default function LoginPage() {
       localStorage.setItem('access_token', data.access_token)
       localStorage.setItem('refresh_token', data.refresh_token)
 
-      const payload = JSON.parse(window.atob(data.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
-      const user = payload?.context?.user
-      window.location.href = user?.is_superadmin ? '/admin/tenants' : '/dashboard'
+      window.location.href = '/dashboard'
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

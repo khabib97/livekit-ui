@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState, useEffect } from 'react'
 import MeetingRoom from '@/components/MeetingRoom'
+import { useBranding } from '@/lib/branding'
 
 function getSubdomain(): string {
   if (typeof window === 'undefined') return ''
@@ -13,6 +14,7 @@ function getSubdomain(): string {
 function RoomContent({ roomKey }: { roomKey: string }) {
   const params = useSearchParams()
   const initialToken = params.get('token')
+  const branding = useBranding()
 
   const [token, setToken] = useState<string | null>(initialToken)
   const [name, setName] = useState('')
@@ -67,6 +69,8 @@ function RoomContent({ roomKey }: { roomKey: string }) {
 
   const canSubmit = !joining && (isLoggedIn || !!name.trim())
 
+  const primaryColor = branding?.primary_color ?? '#2563eb'
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -75,7 +79,19 @@ function RoomContent({ roomKey }: { roomKey: string }) {
       <form onSubmit={handleJoin} style={{
         background: '#1e1e1e', padding: '2rem', borderRadius: '12px',
         display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '320px',
+        border: '1px solid #2a2a2a',
       }}>
+        {/* Tenant branding */}
+        {branding && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+            {branding.logo_url && (
+              <img src={branding.logo_url} alt={branding.name} style={{ maxHeight: 32, maxWidth: 120, objectFit: 'contain', borderRadius: 3 }} />
+            )}
+            {!branding.logo_url && (
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>{branding.name}</span>
+            )}
+          </div>
+        )}
         <h2 style={{ color: '#fff', margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
           Join Meeting
         </h2>
@@ -115,7 +131,7 @@ function RoomContent({ roomKey }: { roomKey: string }) {
           disabled={!canSubmit}
           style={{
             padding: '0.75rem', borderRadius: '8px', border: 'none',
-            background: canSubmit ? '#2563eb' : '#374151',
+            background: canSubmit ? primaryColor : '#374151',
             color: '#fff', fontSize: '1rem',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             transition: 'background 0.15s',

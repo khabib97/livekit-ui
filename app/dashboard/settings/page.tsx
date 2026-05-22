@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { apiFetch, getCurrentUser, logout, UserContext } from '@/lib/api'
+import { apiFetch, getCurrentUser, UserContext } from '@/lib/api'
+import { useBranding } from '@/lib/branding'
+import TenantSidebar from '@/components/TenantSidebar'
 
 interface Tenant {
   id: number
@@ -16,6 +18,7 @@ interface Tenant {
 }
 
 export default function SettingsPage() {
+  const branding = useBranding()
   const [user, setUser] = useState<UserContext | null>(null)
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [form, setForm] = useState({ company_name: '', primary_color: '' })
@@ -79,19 +82,16 @@ export default function SettingsPage() {
 
   return (
     <div style={layout}>
-      <aside style={sidebar}>
-        <div style={logo}>Meeting</div>
-        <nav style={nav}>
-          <a href="/dashboard" style={navLink(false)}>Meetings</a>
-          <a href="/dashboard/settings" style={navLink(true)}>Settings</a>
-          <a href="/dashboard/members" style={navLink(false)}>Members</a>
-          {user.is_superadmin && <a href="/admin/tenants" style={navLink(false)}>Admin</a>}
-        </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <p style={userInfo}>{user.name}</p>
-          <button onClick={logout} style={logoutBtn}>Sign out</button>
-        </div>
-      </aside>
+      <TenantSidebar
+        branding={branding}
+        userName={user.name}
+        navItems={[
+          { href: '/dashboard', label: 'Meetings', active: false },
+          { href: '/dashboard/settings', label: 'Settings', active: true },
+          { href: '/dashboard/members', label: 'Members', active: false },
+          ...(user.is_superadmin ? [{ href: '/admin/tenants', label: 'Admin', active: false }] : []),
+        ]}
+      />
 
       <main style={main}>
         <h2 style={pageHeading}>Workspace Settings</h2>
@@ -137,9 +137,9 @@ export default function SettingsPage() {
           <h3 style={cardHeading}>Logo</h3>
           {tenant.logo_path && (
             <img
-              src={tenant.logo_path}
+              src={`/api/v1/tenant-logo/${tenant.subdomain}`}
               alt="Current logo"
-              style={{ maxHeight: 60, marginBottom: '1rem', borderRadius: '4px' }}
+              style={{ maxHeight: 60, marginBottom: '1rem', borderRadius: '4px', display: 'block' }}
             />
           )}
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -173,25 +173,6 @@ export default function SettingsPage() {
 }
 
 const layout: React.CSSProperties = { display: 'flex', minHeight: '100vh', background: '#111' }
-const sidebar: React.CSSProperties = {
-  width: 220, background: '#161616', borderRight: '1px solid #222',
-  display: 'flex', flexDirection: 'column', padding: '1.5rem 1rem', flexShrink: 0,
-}
-const logo: React.CSSProperties = { color: '#fff', fontWeight: 700, fontSize: '1.1rem', marginBottom: '2rem' }
-const nav: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.25rem' }
-const navLink = (active: boolean): React.CSSProperties => ({
-  padding: '0.5rem 0.75rem', borderRadius: '6px', textDecoration: 'none',
-  color: active ? '#fff' : '#9ca3af',
-  background: active ? '#1e293b' : 'transparent', fontSize: '0.9rem',
-})
-const userInfo: React.CSSProperties = {
-  color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.5rem',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-}
-const logoutBtn: React.CSSProperties = {
-  width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #333',
-  background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: '0.85rem',
-}
 const main: React.CSSProperties = { flex: 1, padding: '2rem', maxWidth: 640 }
 const pageHeading: React.CSSProperties = { color: '#fff', fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.25rem' }
 const subheading: React.CSSProperties = { color: '#6b7280', fontSize: '0.875rem', margin: '0 0 2rem' }
