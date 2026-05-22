@@ -16,7 +16,7 @@ import {
 } from '@livekit/components-react'
 import { Track, RoomEvent, Participant } from 'livekit-client'
 import '@livekit/components-styles'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useBranding } from '@/lib/branding'
 
 interface MeetingRoomProps {
@@ -86,6 +86,134 @@ const UsersIcon = () => (
     <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
   </svg>
 )
+
+const RecordIcon = ({ active }: { active: boolean }) => active ? (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </svg>
+) : (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="12" r="7" />
+  </svg>
+)
+
+// ── Local recording ───────────────────────────────────────────────────────────
+
+function useLocalRecording(participants: ReturnType<typeof useParticipants>) {
+  const [recording, setRecording] = useState(false)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const frameRef = useRef<number>(0)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const videoElsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop()
+      }
+      cancelAnimationFrame(frameRef.current)
+      audioCtxRef.current?.close()
+    }
+  }, [])
+
+  async function startRecording() {
+    if (recording) return
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 1280
+    canvas.height = 720
+    const ctx = canvas.getContext('2d')!
+
+    const audioCtx = new AudioContext()
+    audioCtxRef.current = audioCtx
+    const dest = audioCtx.createMediaStreamDestination()
+
+    participants.forEach(p => {
+      // Mix audio from every participant
+      const audioMst = p.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack
+      if (audioMst) {
+        try {
+          audioCtx.createMediaStreamSource(new MediaStream([audioMst])).connect(dest)
+        } catch { /* ignore */ }
+      }
+
+      // Prefer screen share track over camera for the video grid
+      const videoPub =
+        p.getTrackPublication(Track.Source.ScreenShare) ??
+        p.getTrackPublication(Track.Source.Camera)
+      const videoMst = videoPub?.track?.mediaStreamTrack
+      if (videoMst) {
+        const el = document.createElement('video')
+        el.srcObject = new MediaStream([videoMst])
+        el.muted = true
+        el.playsInline = true
+        el.play().catch(() => {})
+        videoElsRef.current.set(p.identity, el)
+      }
+    })
+
+    function draw() {
+      const els = [...videoElsRef.current.values()]
+      const n = Math.max(els.length, 1)
+      const cols = Math.ceil(Math.sqrt(n))
+      const rows = Math.ceil(n / cols)
+      const cw = canvas.width / cols
+      const ch = canvas.height / rows
+
+      ctx.fillStyle = '#111111'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      els.forEach((el, i) => {
+        ctx.drawImage(el, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch)
+      })
+      frameRef.current = requestAnimationFrame(draw)
+    }
+    draw()
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
+      : 'video/webm'
+
+    const stream = new MediaStream([
+      ...canvas.captureStream(30).getVideoTracks(),
+      ...dest.stream.getAudioTracks(),
+    ])
+
+    const recorder = new MediaRecorder(stream, { mimeType })
+    chunksRef.current = []
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    recorder.start(1000)
+    recorderRef.current = recorder
+    setRecording(true)
+  }
+
+  function stopRecording() {
+    const recorder = recorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `meeting-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.webm`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+
+    recorder.stop()
+    cancelAnimationFrame(frameRef.current)
+    audioCtxRef.current?.close()
+    videoElsRef.current.forEach(el => { el.srcObject = null })
+    videoElsRef.current.clear()
+    recorderRef.current = null
+    setRecording(false)
+  }
+
+  return { recording, startRecording, stopRecording }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -251,6 +379,9 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
     { onlySubscribed: false },
   )
 
+  const amModerator = parseMeta(localParticipant).moderator
+  const { recording, startRecording, stopRecording } = useLocalRecording(participants)
+
   const [showPanel, setShowPanel] = useState(true)
   const [handRaised, setHandRaised] = useState(false)
   const [handRaises, setHandRaises] = useState<HandRaises>({})
@@ -300,8 +431,21 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
           ) : (
             <span style={{ color: '#d1d5db', fontWeight: 600, fontSize: '0.875rem' }}>{branding.name}</span>
           )}
+          {recording && (
+            <span style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem',
+              color: '#f87171', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', background: '#ef4444',
+                animation: 'recblink 1.2s ease-in-out infinite',
+              }} />
+              REC
+            </span>
+          )}
         </div>
       )}
+      <style>{`@keyframes recblink { 0%,100%{opacity:1} 50%{opacity:0.2} }`}</style>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Video grid */}
@@ -352,6 +496,22 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
         >
           <HandIcon size={16} />
         </button>
+
+        {/* Record (moderator only) */}
+        {amModerator && (
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            title={recording ? 'Stop recording & download' : 'Start local recording'}
+            style={{
+              ...controlBtn,
+              background: recording ? '#450a0a' : '#1c1c1e',
+              borderColor: recording ? '#dc2626' : '#374151',
+              color: recording ? '#f87171' : '#9ca3af',
+            }}
+          >
+            <RecordIcon active={recording} />
+          </button>
+        )}
 
         {/* Toggle participant panel */}
         <button
