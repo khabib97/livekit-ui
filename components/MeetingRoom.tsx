@@ -845,6 +845,60 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
         </button>
       </div>
 
+      {/* Co-watch URL input overlay */}
+      {showCowInput && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+        }}>
+          <div style={{
+            background: '#1e1e1e', borderRadius: 12, padding: '1.5rem 2rem',
+            border: '1px solid #2a2a2a', width: 420, maxWidth: '90vw',
+          }}>
+            <div style={{ color: '#fff', fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
+              Share a video with everyone
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+              YouTube, Vimeo, or any direct video URL
+            </div>
+            <input
+              autoFocus
+              value={cowInput}
+              onChange={e => setCowInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && cowInput.trim()) {
+                  shareCow(cowInput.trim()); setCowInput(''); setShowCowInput(false)
+                }
+                if (e.key === 'Escape') { setCowInput(''); setShowCowInput(false) }
+              }}
+              placeholder="https://youtube.com/watch?v=..."
+              style={{
+                width: '100%', padding: '0.75rem 1rem', borderRadius: 8,
+                border: '1px solid #333', background: '#2a2a2a',
+                color: '#fff', fontSize: '0.9rem', outline: 'none',
+                boxSizing: 'border-box', marginBottom: '1rem',
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setCowInput(''); setShowCowInput(false) }}
+                style={{ ...controlBtn, color: '#9ca3af' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (cowInput.trim()) { shareCow(cowInput.trim()); setCowInput(''); setShowCowInput(false) }
+                }}
+                style={{ ...controlBtn, background: '#1d4ed8', borderColor: '#2563eb', color: '#fff' }}
+              >
+                Share
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <RoomAudioRenderer />
     </div>
   )
