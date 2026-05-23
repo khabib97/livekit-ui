@@ -17,18 +17,30 @@ function RoomContent({ roomKey }: { roomKey: string }) {
   const branding = useBranding()
 
   const [token, setToken] = useState<string | null>(initialToken)
+  const [meetingType, setMeetingType] = useState<'meeting' | 'conference'>('meeting')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [passwordRequired, setPasswordRequired] = useState(false)
 
   useEffect(() => {
     setIsLoggedIn(!!localStorage.getItem('access_token'))
-  }, [])
+    // Fetch public meeting info to get type and password requirement
+    fetch(`/api/v1/meeting/public/${roomKey}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setMeetingType(data.meeting_type ?? 'meeting')
+          setPasswordRequired(data.password_required ?? false)
+        }
+      })
+      .catch(() => {})
+  }, [roomKey])
 
   if (token) {
-    return <MeetingRoom token={token} roomKey={roomKey} />
+    return <MeetingRoom token={token} roomKey={roomKey} meetingType={meetingType} />
   }
 
   async function handleJoin(e: React.FormEvent) {
@@ -59,6 +71,7 @@ function RoomContent({ roomKey }: { roomKey: string }) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail ?? `Error ${res.status}`)
+      setMeetingType(data.meeting_type ?? 'meeting')
       setToken(data.token)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to join. Please try again.')
@@ -68,8 +81,8 @@ function RoomContent({ roomKey }: { roomKey: string }) {
   }
 
   const canSubmit = !joining && (isLoggedIn || !!name.trim())
-
   const primaryColor = branding?.primary_color ?? '#2563eb'
+  const isConference = meetingType === 'conference'
 
   return (
     <div style={{
@@ -92,9 +105,21 @@ function RoomContent({ roomKey }: { roomKey: string }) {
             )}
           </div>
         )}
-        <h2 style={{ color: '#fff', margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
-          Join Meeting
-        </h2>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h2 style={{ color: '#fff', margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
+            {isConference ? 'Join Conference' : 'Join Meeting'}
+          </h2>
+          {isConference && (
+            <span style={conferenceBadge}>CONFERENCE</span>
+          )}
+        </div>
+
+        {isConference && !isLoggedIn && (
+          <p style={{ color: '#a78bfa', margin: 0, fontSize: '0.82rem', background: '#1e1b4b', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
+            You will join as audience — view-only. The moderator can grant you speaking permission.
+          </p>
+        )}
 
         {isLoggedIn ? (
           <p style={{ color: '#9ca3af', margin: 0, fontSize: '0.875rem' }}>
@@ -113,14 +138,26 @@ function RoomContent({ roomKey }: { roomKey: string }) {
           />
         )}
 
-        <input
-          type="password"
-          placeholder="Meeting password (if required)"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          disabled={joining}
-          style={inputStyle}
-        />
+        {(passwordRequired || password) && (
+          <input
+            type="password"
+            placeholder="Meeting password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            disabled={joining}
+            style={inputStyle}
+          />
+        )}
+        {!passwordRequired && !password && (
+          <input
+            type="password"
+            placeholder="Password (if required)"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            disabled={joining}
+            style={inputStyle}
+          />
+        )}
 
         {error && (
           <p style={{ color: '#f87171', margin: 0, fontSize: '0.875rem' }}>{error}</p>
@@ -131,13 +168,13 @@ function RoomContent({ roomKey }: { roomKey: string }) {
           disabled={!canSubmit}
           style={{
             padding: '0.75rem', borderRadius: '8px', border: 'none',
-            background: canSubmit ? primaryColor : '#374151',
+            background: canSubmit ? (isConference ? '#6d28d9' : primaryColor) : '#374151',
             color: '#fff', fontSize: '1rem',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             transition: 'background 0.15s',
           }}
         >
-          {joining ? 'Joining…' : 'Join'}
+          {joining ? 'Joining…' : isConference ? 'Join as audience' : 'Join'}
         </button>
       </form>
     </div>
@@ -148,6 +185,11 @@ const inputStyle: React.CSSProperties = {
   padding: '0.75rem 1rem', borderRadius: '8px',
   border: '1px solid #333', background: '#2a2a2a',
   color: '#fff', fontSize: '1rem', outline: 'none',
+}
+const conferenceBadge: React.CSSProperties = {
+  fontSize: '0.65rem', padding: '2px 7px', borderRadius: 4,
+  border: '1px solid #6d28d9', color: '#c4b5fd', background: '#3b0764',
+  fontWeight: 700, letterSpacing: '0.05em',
 }
 
 export default function RoomPage({ params }: { params: { roomKey: string } }) {

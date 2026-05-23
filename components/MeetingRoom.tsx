@@ -22,6 +22,7 @@ import { useBranding } from '@/lib/branding'
 interface MeetingRoomProps {
   token: string
   roomKey: string
+  meetingType?: 'meeting' | 'conference'
 }
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? ''
@@ -355,9 +356,12 @@ function useCoWatch(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function parseMeta(p: Participant): { moderator: boolean } {
-  try { return p.metadata ? JSON.parse(p.metadata) : { moderator: false } }
-  catch { return { moderator: false } }
+function parseMeta(p: Participant): { moderator: boolean; speaker: boolean } {
+  try {
+    const m = p.metadata ? JSON.parse(p.metadata) : {}
+    return { moderator: !!m.moderator, speaker: m.speaker !== false }  // default speaker=true for regular meetings
+  }
+  catch { return { moderator: false, speaker: true } }
 }
 
 // ── Participant panel ─────────────────────────────────────────────────────────
@@ -367,11 +371,13 @@ function ParticipantPanel({
   livekitToken,
   handRaises,
   onLowerHand,
+  isConference,
 }: {
   roomKey: string
   livekitToken: string
   handRaises: HandRaises
   onLowerHand: (identity: string) => void
+  isConference: boolean
 }) {
   const participants = useParticipants()
   const room = useRoomContext()
@@ -445,6 +451,16 @@ function ParticipantPanel({
                 </span>
               )}
 
+              {/* Conference: audience badge for non-speakers */}
+              {isConference && !meta.moderator && !meta.speaker && (
+                <span style={{
+                  fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4,
+                  border: '1px solid #374151', color: '#6b7280',
+                }}>
+                  audience
+                </span>
+              )}
+
               {/* Raised hand */}
               {raised && (
                 <button
@@ -465,20 +481,39 @@ function ParticipantPanel({
               {/* Moderator actions */}
               {amModerator && !p.isLocal && (
                 <div style={{ display: 'flex', gap: '3px' }}>
-                  <button
-                    onClick={() => apiPost('mute-mic', { participant_identity: p.identity, muted: !micMuted })}
-                    title={micMuted ? 'Unmute microphone' : 'Mute microphone'}
-                    style={{ ...iconBtn, color: micMuted ? '#f87171' : '#9ca3af' }}
-                  >
-                    {micMuted ? <MicOffIcon /> : <MicIcon />}
-                  </button>
-                  <button
-                    onClick={() => apiPost('mute-cam', { participant_identity: p.identity, muted: !camMuted })}
-                    title={camMuted ? 'Unmute camera' : 'Mute camera'}
-                    style={{ ...iconBtn, color: camMuted ? '#f87171' : '#9ca3af' }}
-                  >
-                    {camMuted ? <CamOffIcon /> : <CamIcon />}
-                  </button>
+                  {/* Conference: grant/revoke speaking */}
+                  {isConference && !meta.moderator && (
+                    <button
+                      onClick={() => apiPost(meta.speaker ? 'revoke-speaking' : 'grant-speaking', { participant_identity: p.identity })}
+                      title={meta.speaker ? 'Revoke speaking' : 'Grant speaking'}
+                      style={{
+                        ...iconBtn,
+                        color: meta.speaker ? '#fbbf24' : '#4ade80',
+                        fontSize: '0.65rem', padding: '2px 5px',
+                      }}
+                    >
+                      {meta.speaker ? 'Mute' : 'Speak'}
+                    </button>
+                  )}
+                  {/* Standard mute/cam controls (only for speakers or non-conference) */}
+                  {(!isConference || meta.speaker) && (
+                    <>
+                      <button
+                        onClick={() => apiPost('mute-mic', { participant_identity: p.identity, muted: !micMuted })}
+                        title={micMuted ? 'Unmute microphone' : 'Mute microphone'}
+                        style={{ ...iconBtn, color: micMuted ? '#f87171' : '#9ca3af' }}
+                      >
+                        {micMuted ? <MicOffIcon /> : <MicIcon />}
+                      </button>
+                      <button
+                        onClick={() => apiPost('mute-cam', { participant_identity: p.identity, muted: !camMuted })}
+                        title={camMuted ? 'Unmute camera' : 'Mute camera'}
+                        style={{ ...iconBtn, color: camMuted ? '#f87171' : '#9ca3af' }}
+                      >
+                        {camMuted ? <CamOffIcon /> : <CamIcon />}
+                      </button>
+                    </>
+                  )}
                   {!meta.moderator && (
                     <button
                       onClick={() => apiPost('promote', { participant_identity: p.identity })}
@@ -662,7 +697,7 @@ const iconBtn: React.CSSProperties = {
 
 // ── Main meeting layout ───────────────────────────────────────────────────────
 
-function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToken: string }) {
+function MeetingLayout({ roomKey, livekitToken, isConference }: { roomKey: string; livekitToken: string; isConference: boolean }) {
   const room = useRoomContext()
   const { localParticipant } = useLocalParticipant()
   const participants = useParticipants()
@@ -742,6 +777,15 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
           ) : (
             <span style={{ color: '#d1d5db', fontWeight: 600, fontSize: '0.875rem' }}>{branding.name}</span>
           )}
+          {isConference && (
+            <span style={{
+              fontSize: '0.65rem', padding: '2px 7px', borderRadius: 4,
+              border: '1px solid #6d28d9', color: '#c4b5fd', background: '#3b0764',
+              fontWeight: 700, letterSpacing: '0.05em',
+            }}>
+              CONFERENCE
+            </span>
+          )}
           {recording && (
             <span style={{
               marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem',
@@ -794,6 +838,7 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
             livekitToken={livekitToken}
             handRaises={handRaises}
             onLowerHand={lowerHand}
+            isConference={isConference}
           />
         )}
       </div>
@@ -935,9 +980,10 @@ const controlBtn: React.CSSProperties = {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export default function MeetingRoom({ token, roomKey }: MeetingRoomProps) {
+export default function MeetingRoom({ token, roomKey, meetingType = 'meeting' }: MeetingRoomProps) {
+  const isConference = meetingType === 'conference'
+
   function handleDisconnected() {
-    // Small delay so the user sees the room disappear before redirect
     setTimeout(() => { window.location.href = '/dashboard' }, 1500)
   }
 
@@ -952,7 +998,7 @@ export default function MeetingRoom({ token, roomKey }: MeetingRoomProps) {
       options={{ adaptiveStream: true }}
       onDisconnected={handleDisconnected}
     >
-      <MeetingLayout roomKey={roomKey} livekitToken={token} />
+      <MeetingLayout roomKey={roomKey} livekitToken={token} isConference={isConference} />
     </LiveKitRoom>
   )
 }

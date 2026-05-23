@@ -134,7 +134,7 @@ livekit-ui/
 | `/forgot-password` | Tenant users | Sends reset link to tenant subdomain |
 | `/reset-password?token=` | Tenant users | Token from email |
 | `/invite?token=` | Invited members | Accept invite and create account |
-| `/dashboard` | Owner | Create instant / scheduled meetings |
+| `/dashboard` | Owner | Create instant / scheduled meetings; choose meeting type (regular / conference) and recurrence |
 | `/dashboard/members` | Owner | Invite, activate, deactivate members |
 | `/dashboard/settings` | Owner | Logo upload, brand color, company name |
 | `/room/[roomKey]` | Anyone with link | Join meeting form → live session |
@@ -274,6 +274,9 @@ The live meeting view is built on `@livekit/components-react`. Moderator status 
 | Promote to moderator | Moderator | `POST /api/v1/meeting/{roomKey}/promote` |
 | Local recording | Moderator | Canvas + Web Audio API → MediaRecorder → `.webm` download |
 | Co-watching | Moderator | Share YouTube/Vimeo/direct video; play/pause/sync via DataChannel |
+| Conference mode | Moderator | Audience joins with mic/camera disabled; moderator grants speaking per-participant |
+| Grant / revoke speaking | Moderator | `POST /api/v1/meeting/{roomKey}/grant-speaking` or `revoke-speaking` |
+| Recurring meetings | Creator | Auto-creates the next occurrence on end (`daily` / `weekly` / `monthly`) |
 
 ### Local recording
 
@@ -302,14 +305,22 @@ DataChannel message types:
 | `cow_stop` | Moderator | All participants close the video panel |
 | `cow_state` | Moderator | Sent to late joiners — URL + current position + play state |
 
+### Conference mode
+
+When a meeting is created with `meeting_type: "conference"`, only the moderator (meeting creator) can publish audio/video. All other participants join as audience — the LiveKit `ControlBar` hides their mic and camera, and they see an "audience" badge in the participant panel. The moderator can grant speaking rights to any audience member via the participant panel; the recipient's token is updated in real time via the LiveKit API, enabling their mic and camera.
+
+### Recurring meetings
+
+Meetings can be created with `recurrence: "daily" | "weekly" | "monthly"` and an optional `recurrence_end_date`. When the moderator ends a recurring meeting, the backend automatically creates the next occurrence (advancing `scheduled_at` by the recurrence interval). The response from `POST /api/v1/meeting/end/{id}` includes `next_meeting_id` pointing to the new meeting.
+
 ### Customisation reference
 
 | Area | Location |
 |---|---|
-| Branding header (logo + REC indicator) | `MeetingLayout` return, first `<div>` |
+| Branding header (logo + REC indicator + CONFERENCE badge) | `MeetingLayout` return, first `<div>` |
 | Video grid (grid vs carousel at 30+ participants) | `MeetingLayout`, the `isLarge` branch |
 | Bottom control bar buttons | `MeetingLayout`, bottom `<div>` bar |
-| Participant panel (right sidebar) | `ParticipantPanel` component |
+| Participant panel (right sidebar, audience badges, speak controls) | `ParticipantPanel` component |
 | Local recording | `useLocalRecording` hook |
 | Co-watch state + DataChannel | `useCoWatch` hook |
 | Co-watch video player + moderator controls | `CoWatchPanel` component |
