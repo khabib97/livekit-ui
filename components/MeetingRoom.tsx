@@ -14,7 +14,7 @@ import {
   useLocalParticipant,
   useRoomContext,
 } from '@livekit/components-react'
-import { Track, RoomEvent, Participant } from 'livekit-client'
+import { Track, RoomEvent, ParticipantEvent, Participant } from 'livekit-client'
 import '@livekit/components-styles'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useBranding } from '@/lib/branding'
@@ -375,7 +375,13 @@ function ParticipantPanel({
 }) {
   const participants = useParticipants()
   const { localParticipant } = useLocalParticipant()
-  const amModerator = parseMeta(localParticipant).moderator
+  const [amModerator, setAmModerator] = useState(false)
+  useEffect(() => {
+    const update = () => setAmModerator(parseMeta(localParticipant).moderator)
+    update()
+    localParticipant.on(ParticipantEvent.MetadataChanged, update)
+    return () => { localParticipant.off(ParticipantEvent.MetadataChanged, update) }
+  }, [localParticipant])
 
   async function apiPost(path: string, body: Record<string, unknown>) {
     await fetch(`/api/v1/meeting/${roomKey}/${path}`, {
@@ -665,7 +671,14 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
     { onlySubscribed: false },
   )
 
-  const amModerator = parseMeta(localParticipant).moderator
+  const [amModerator, setAmModerator] = useState(false)
+  useEffect(() => {
+    const update = () => setAmModerator(parseMeta(localParticipant).moderator)
+    update()
+    localParticipant.on(ParticipantEvent.MetadataChanged, update)
+    return () => { localParticipant.off(ParticipantEvent.MetadataChanged, update) }
+  }, [localParticipant])
+
   const { recording, startRecording, stopRecording } = useLocalRecording(participants)
   const { cowUrl, cowCmd, share: shareCow, stop: stopCow, play: cowPlay, pause: cowPause, getCurrentTs } = useCoWatch(room, localParticipant, amModerator)
 
