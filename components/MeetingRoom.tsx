@@ -374,11 +374,19 @@ function ParticipantPanel({
   onLowerHand: (identity: string) => void
 }) {
   const participants = useParticipants()
-  const { metadata: localMetadata } = useLocalParticipant()
-  const amModerator = (() => {
-    try { return localMetadata ? JSON.parse(localMetadata).moderator === true : false }
-    catch { return false }
-  })()
+  const room = useRoomContext()
+  const { localParticipant } = useLocalParticipant()
+  const [amModerator, setAmModerator] = useState(false)
+  useEffect(() => {
+    const update = () => setAmModerator(parseMeta(localParticipant).moderator)
+    update()
+    room.on(RoomEvent.Connected, update)
+    room.on(RoomEvent.ParticipantMetadataChanged, update)
+    return () => {
+      room.off(RoomEvent.Connected, update)
+      room.off(RoomEvent.ParticipantMetadataChanged, update)
+    }
+  }, [room, localParticipant])
 
   async function apiPost(path: string, body: Record<string, unknown>) {
     await fetch(`/api/v1/meeting/${roomKey}/${path}`, {
@@ -656,7 +664,7 @@ const iconBtn: React.CSSProperties = {
 
 function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToken: string }) {
   const room = useRoomContext()
-  const { localParticipant, metadata: localMetadata } = useLocalParticipant()
+  const { localParticipant } = useLocalParticipant()
   const participants = useParticipants()
   const branding = useBranding()
 
@@ -668,10 +676,17 @@ function MeetingLayout({ roomKey, livekitToken }: { roomKey: string; livekitToke
     { onlySubscribed: false },
   )
 
-  const amModerator = (() => {
-    try { return localMetadata ? JSON.parse(localMetadata).moderator === true : false }
-    catch { return false }
-  })()
+  const [amModerator, setAmModerator] = useState(false)
+  useEffect(() => {
+    const update = () => setAmModerator(parseMeta(localParticipant).moderator)
+    update()
+    room.on(RoomEvent.Connected, update)
+    room.on(RoomEvent.ParticipantMetadataChanged, update)
+    return () => {
+      room.off(RoomEvent.Connected, update)
+      room.off(RoomEvent.ParticipantMetadataChanged, update)
+    }
+  }, [room, localParticipant])
 
   const { recording, startRecording, stopRecording } = useLocalRecording(participants)
   const { cowUrl, cowCmd, share: shareCow, stop: stopCow, play: cowPlay, pause: cowPause, getCurrentTs } = useCoWatch(room, localParticipant, amModerator)
