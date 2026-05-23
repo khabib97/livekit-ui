@@ -15,7 +15,7 @@ npm run dev                         # http://localhost:3000
 
 ### Environment variables (`.env.local`)
 
-Copy `.env.local.example` and fill in the values. Three variables control everything:
+Copy `.env.local.example` and fill in the values:
 
 | Variable | What it does | Local value |
 |---|---|---|
@@ -93,7 +93,7 @@ livekit-ui/
 │       └── [id]/               # Support: limited tenant detail (no meetings tab)
 │
 ├── components/
-│   ├── MeetingRoom.tsx         # Live meeting UI (LiveKit React + moderator controls)
+│   ├── MeetingRoom.tsx         # Live meeting UI (LiveKit React + all moderator features)
 │   └── TenantSidebar.tsx       # Shared sidebar used by all dashboard pages
 │
 ├── lib/
@@ -221,7 +221,7 @@ export default function YourPage() {
 
 ## Design system
 
-No CSS framework is used — all styles are inline `React.CSSProperties` objects. The consistent values used across the app:
+No CSS framework — all styles are inline `React.CSSProperties` objects.
 
 | Token | Value | Used for |
 |---|---|---|
@@ -236,20 +236,16 @@ No CSS framework is used — all styles are inline `React.CSSProperties` objects
 | Danger | `#f87171` | Errors, destructive actions |
 | Success | `#4ade80` | Confirmation states |
 
-Standard card pattern:
-
 ```typescript
+// Standard card
 const card: React.CSSProperties = {
   background: '#1e1e1e',
   borderRadius: '12px',
   padding: '2rem',
   border: '1px solid #2a2a2a',
 }
-```
 
-Standard input pattern:
-
-```typescript
+// Standard input
 const input: React.CSSProperties = {
   padding: '0.75rem 1rem',
   borderRadius: '8px',
@@ -265,16 +261,58 @@ const input: React.CSSProperties = {
 
 ## Meeting room (`MeetingRoom.tsx`)
 
-The live meeting view is built on `@livekit/components-react`. Key areas to customise:
+The live meeting view is built on `@livekit/components-react`. Moderator status is detected reactively from the participant's LiveKit token metadata (`{"moderator": true}`) via `RoomEvent.Connected` and `RoomEvent.ParticipantMetadataChanged` — moderator controls appear as soon as the room connection is confirmed.
+
+### Features
+
+| Feature | Who | How it works |
+|---|---|---|
+| Video / audio / screen share | Everyone | LiveKit `ControlBar` |
+| Raise hand | Everyone | DataChannel broadcast (`raise_hand`) |
+| Mute / unmute participant | Moderator | `POST /api/v1/meeting/{roomKey}/mute-mic` or `mute-cam` |
+| Kick participant | Moderator | `POST /api/v1/meeting/{roomKey}/kick` |
+| Promote to moderator | Moderator | `POST /api/v1/meeting/{roomKey}/promote` |
+| Local recording | Moderator | Canvas + Web Audio API → MediaRecorder → `.webm` download |
+| Co-watching | Moderator | Share YouTube/Vimeo/direct video; play/pause/sync via DataChannel |
+
+### Local recording
+
+Click the circle (●) button to start. The browser records an off-screen canvas (all participant videos mixed in a grid) plus all participant audio, using `MediaRecorder` (VP9+Opus → `.webm`). Clicking stop triggers a browser download. A blinking **REC** indicator appears in the branding header while active. Recording is local — nothing is sent to the server.
+
+### Co-watching
+
+Click the TV icon (▭) to share a video. Supported sources:
+
+| Source | Embed method | Control API |
+|---|---|---|
+| YouTube | `youtube.com/embed/{id}?enablejsapi=1` | `postMessage` commands |
+| Vimeo | `player.vimeo.com/video/{id}?api=1` | `postMessage` commands |
+| Direct URL | HTML5 `<video>` element | `.play()`, `.pause()`, `.currentTime` |
+
+All play/pause/sync events are broadcast via LiveKit DataChannel. When a participant joins mid-session, the moderator automatically sends the current URL and playback position (`cow_state` message). Non-moderators see the video appear automatically — they have no controls.
+
+DataChannel message types:
+
+| Type | Sent by | Effect |
+|---|---|---|
+| `cow_share` | Moderator | All participants load the video URL |
+| `cow_play` | Moderator | All participants seek + play from timestamp |
+| `cow_pause` | Moderator | All participants pause |
+| `cow_seek` | Moderator | All participants seek to timestamp |
+| `cow_stop` | Moderator | All participants close the video panel |
+| `cow_state` | Moderator | Sent to late joiners — URL + current position + play state |
+
+### Customisation reference
 
 | Area | Location |
 |---|---|
-| Branding header (logo + REC indicator) | `MeetingLayout` return, first `<div>` block |
-| Video grid layout (grid vs carousel) | `MeetingLayout`, the `isLarge` branch |
-| Bottom control bar | `MeetingLayout`, the bottom `<div>` bar |
+| Branding header (logo + REC indicator) | `MeetingLayout` return, first `<div>` |
+| Video grid (grid vs carousel at 30+ participants) | `MeetingLayout`, the `isLarge` branch |
+| Bottom control bar buttons | `MeetingLayout`, bottom `<div>` bar |
 | Participant panel (right sidebar) | `ParticipantPanel` component |
-| Local recording logic | `useLocalRecording` hook |
-| Moderator actions (mute, kick, promote) | `ParticipantPanel`, `apiPost` calls |
+| Local recording | `useLocalRecording` hook |
+| Co-watch state + DataChannel | `useCoWatch` hook |
+| Co-watch video player + moderator controls | `CoWatchPanel` component |
 
 LiveKit component docs: https://docs.livekit.io/reference/components/react/
 
@@ -289,4 +327,3 @@ LiveKit component docs: https://docs.livekit.io/reference/components/react/
 | Staff access token | `localStorage.staff_access_token` | `lib/staff-api.ts` → `staffFetch` |
 | Staff refresh token | `localStorage.staff_refresh_token` | staff logout |
 | Tenant subdomain | `_tenant` cookie (httpOnly: false) | `lib/branding.ts` → `useBranding()` |
-
